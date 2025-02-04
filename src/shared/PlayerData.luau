@@ -1,12 +1,13 @@
 local ProfileTemplate = {
-    Cash = 0,
-    Items = {},
+    Coins = 0,
+    Gems = 0,
+    Weapons = {},
     LogInTimes = 0,
 }
 
 ----- Loaded Modules -----
 
-local ProfileService = require(game.ServerScriptService.ProfileService)
+local ProfileService = require(game.ServerScriptService.Server.ProfileService)
 
 ----- Private Variables -----
 
@@ -81,3 +82,5 @@ Players.PlayerRemoving:Connect(function(player)
         profile:Release()
     end
 end)
+
+return ProfileTemplate
