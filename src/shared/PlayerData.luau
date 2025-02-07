@@ -5,40 +5,57 @@ local ProfileTemplate = {
     LogInTimes = 0,
 }
 
+----- Services -----
+
+local Players = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+----- Folders -----
+
+local Packages = ReplicatedStorage.Packages
+
 ----- Loaded Modules -----
 
-local ProfileService = require(game.ServerScriptService.Server.ProfileService)
+local ProfileService = require(ServerScriptService.Server.ProfileService)
+local Warp = require(Packages.warp)
 
 ----- Private Variables -----
 
-local Players = game:GetService("Players")
-
 local ProfileStore = ProfileService.GetProfileStore(
-    "PlayerData",
+    "PlayerDataTest2",
     ProfileTemplate
 )
 
 local Profiles = {} -- [player] = profile
 
+local Remote = Warp.Server("GiveCoins");
+
 ----- Private Functions -----
 
-local function GiveCash(profile, amount)
-    -- If "Cash" was not defined in the ProfileTemplate at game launch,
+local function GiveCoins(profile, amount, player)
+    -- If "Coins" was not defined in the ProfileTemplate at game launch,
     --   you will have to perform the following:
-    if profile.Data.Cash == nil then
-        profile.Data.Cash = 0
+    if profile.Data.Coins == nil then
+        profile.Data.Coins = 0
     end
-    -- Increment the "Cash" value:
-    profile.Data.Cash = profile.Data.Cash + amount
+    -- Increment the "Coins" value:
+    profile.Data.Coins = profile.Data.Coins + amount
+    Remote:Fire(true,player, profile.Data.Coins)
 end
 
 local function DoSomethingWithALoadedProfile(player, profile)
     profile.Data.LogInTimes = profile.Data.LogInTimes + 1
     print(player.Name .. " has logged in " .. tostring(profile.Data.LogInTimes)
         .. " time" .. ((profile.Data.LogInTimes > 1) and "s" or ""))
-    GiveCash(profile, 100)
-    print(player.Name .. " owns " .. tostring(profile.Data.Cash) .. " now!")
+    Remote:Fire(true,player, profile.Data.Coins)
 end
+
+Remote:Connect(function(player)
+    local profile = Profiles[player]
+
+    GiveCoins(profile, 100, player)
+end)
 
 local function PlayerAdded(player)
     local profile = ProfileStore:LoadProfileAsync("Player_" .. player.UserId)
