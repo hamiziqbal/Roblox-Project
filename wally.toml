@@ -6,3 +6,6 @@ realm = "shared"
 
 [dependencies]
 warp = "imezx/warp@1.0.14"
+boattween = "boatbomber/boattween@1.0.1"
+spr = "blackjackiee/spr@1.1.3"
+janitor = "howmanysmall/janitor@1.17.0"

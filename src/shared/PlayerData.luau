@@ -1,7 +1,13 @@
 local ProfileTemplate = {
     Coins = 0,
     Gems = 0,
-    Weapons = {},
+    Inventory = {
+        Weapons = {},
+        Armor = {},
+        Items = {},
+        Aura = {},
+        EquippedId = 0,
+    },
     LogInTimes = 0,
 }
 
@@ -23,13 +29,15 @@ local Warp = require(Packages.warp)
 ----- Private Variables -----
 
 local ProfileStore = ProfileService.GetProfileStore(
-    "PlayerDataTest2",
+    "PlayerDataTest5",
     ProfileTemplate
 )
 
 local Profiles = {} -- [player] = profile
 
-local Remote = Warp.Server("GiveCoins");
+local Remote = Warp.Server("GiveCoins")
+local Remote2 = Warp.Server("GiveItem")
+local Remote3 = Warp.Server("Equip")
 
 ----- Private Functions -----
 
@@ -44,10 +52,21 @@ local function GiveCoins(profile, amount, player)
     Remote:Fire(true,player, profile.Data.Coins)
 end
 
+local function GiveItem(itemName, player, profile)
+    Remote2:Fire(true, player, itemName, profile.Data.Inventory.EquippedId)
+end
+
 local function DoSomethingWithALoadedProfile(player, profile)
+    if profile.Data.LogInTimes == 0 then
+        table.insert(profile.Data.Inventory.Weapons, "Classic Sword")
+        --GiveItem(profile.Data.Inventory.Weapons, player, profile)
+    end
+
     profile.Data.LogInTimes = profile.Data.LogInTimes + 1
+
     print(player.Name .. " has logged in " .. tostring(profile.Data.LogInTimes)
         .. " time" .. ((profile.Data.LogInTimes > 1) and "s" or ""))
+
     Remote:Fire(true,player, profile.Data.Coins)
 end
 
@@ -55,6 +74,18 @@ Remote:Connect(function(player)
     local profile = Profiles[player]
 
     GiveCoins(profile, 100, player)
+end)
+
+Remote3:Connect(function(player, id)
+    if Profiles[player].Data.Inventory.EquippedId == id then
+        Profiles[player].Data.Inventory.EquippedId = 0
+    else
+        Profiles[player].Data.Inventory.EquippedId = id
+    end
+
+    print("Yeah")
+
+    Remote3:Fire(true, player, id)
 end)
 
 local function PlayerAdded(player)
@@ -71,6 +102,7 @@ local function PlayerAdded(player)
             Profiles[player] = profile
             -- A profile has been successfully loaded:
             DoSomethingWithALoadedProfile(player, profile)
+            GiveItem(profile.Data.Inventory.Weapons, player, profile)
         else
             -- Player left before the profile loaded:
             profile:Release()
