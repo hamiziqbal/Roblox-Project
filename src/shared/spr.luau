@@ -1,8 +1,9 @@
 --!strict
+--!native
 ---------------------------------------------------------------------
 -- spr - Spring-driven motion library
 --
--- Copyright (c) 2023 Fractality. All rights reserved.
+-- Copyright (c) 2024 Fractality. All rights reserved.
 -- Released under the MIT license.
 --
 -- Docs & license can be found at https://github.com/Fraktality/spr
@@ -33,19 +34,20 @@
 local STRICT_RUNTIME_TYPES = true -- assert on parameter and property type mismatch
 local SLEEP_OFFSET_SQ_LIMIT = (1/3840)^2 -- square of the offset sleep limit
 local SLEEP_VELOCITY_SQ_LIMIT = 1e-2^2 -- square of the velocity sleep limit
-local SLEEP_ROTATION_OFFSET = math.rad(0.01) -- rad
+local SLEEP_ROTATION_DIFF = math.rad(0.01) -- rad
 local SLEEP_ROTATION_VELOCITY = math.rad(0.1) -- rad/s
 local EPS = 1e-5 -- epsilon for stability checks around pathological frequency/damping values
-local AXIS_MATRIX_EPS = 1e-6 -- epsilon for converting from axis-angle to matrix
 
-local RunService = game:GetService("RunService")
+local RunService: RunService = game:GetService("RunService")
 
 local pi = math.pi
 local exp = math.exp
 local sin = math.sin
 local cos = math.cos
 local min = math.min
+local max = math.max
 local sqrt = math.sqrt
+local atan2 = math.atan2
 local round = math.round
 
 local function magnitudeSq(vec: {number})
@@ -140,7 +142,7 @@ do
 		-- The solution takes one of three forms for 0<=d<1, d=1, and d>1
 
 		local d = self.d
-		local f = self.f*2*pi -- Hz -> Rad/s
+		local f = self.f*(2*pi) -- Hz -> Rad/s
 		local g = self.g
 		local p = self.p
 		local v = self.v
@@ -210,8 +212,8 @@ do
 		else -- overdamped
 			local c = sqrt(d*d - 1)
 
-			local r1 = -f*(d - c)
-			local r2 = -f*(d + c)
+			local r1 = -f*(d + c)
+			local r2 = -f*(d - c)
 
 			local ec1 = exp(r1*dt)
 			local ec2 = exp(r2*dt)
@@ -243,31 +245,13 @@ type RotationSpring = typeof(setmetatable({} :: {
 do
 	RotationSpring.__index = RotationSpring
 
-	local function angleBetween(c0: CFrame, c1: CFrame)
-		local _, angle = (c1:ToObjectSpace(c0)):ToAxisAngle()
-		return math.abs(angle)
-	end
-
-	local function matrixToAxis(m: CFrame)
-		local axis, angle = m:ToAxisAngle()
-		return axis*angle
-	end
-
-	local function axisToMatrix(v: Vector3)
-		local mag = v.Magnitude
-		if mag > AXIS_MATRIX_EPS then
-			return CFrame.fromAxisAngle(v.Unit, mag)
-		end
-		return CFrame.identity
-	end
-
 	function RotationSpring.new(d: number, f: number, p: CFrame, g: CFrame)
 		return setmetatable(
 			{
 				d = d,
 				f = f,
-				g = g,
-				p = p,
+				g = g:Orthonormalize(),
+				p = p:Orthonormalize(),
 				v = Vector3.zero
 			},
 			RotationSpring
@@ -275,7 +259,7 @@ do
 	end
 
 	function RotationSpring.setGoal(self: RotationSpring, value: CFrame)
-		self.g = value
+		self.g = value:Orthonormalize()
 	end
 
 	function RotationSpring.setDampingRatio(self: RotationSpring, dampingRatio: number)
@@ -286,29 +270,84 @@ do
 		self.f = frequency
 	end
 
+	-- evaluate dot products in high precision
+	local function dot(v0: Vector3, v1: Vector3)
+		return v0.X*v1.X + v0.Y*v1.Y + v0.Z*v1.Z
+	end
+
+	local function areRotationsClose(c0: CFrame, c1: CFrame)
+		local rx = dot(c0.XVector, c1.XVector)
+		local ry = dot(c0.YVector, c1.YVector)
+		local rz = dot(c0.ZVector, c1.ZVector)
+		local trace = rx + ry + rz
+		return trace > 1 + 2*cos(SLEEP_ROTATION_DIFF)
+	end
+	
+	local function angleDiff(c0: CFrame, c1: CFrame)
+		local x = dot(c0.XVector, c1.XVector)
+		local y = dot(c0.YVector, c1.YVector)
+		local z = dot(c0.ZVector, c1.ZVector)
+		local w = x + y + z - 1
+		return atan2(sqrt(max(0, 1 - w*w*0.25)), w*0.5)
+	end
+	
+	-- gives approx. 21% accuracy improvement over CFrame.fromAxisAngle near poles
+	local function fromAxisAngle(axis: Vector3, angle: number)
+		local c = cos(angle)
+		local s = sin(angle)
+		local x, y, z = axis.X, axis.Y, axis.Z
+
+		local mxy = x*y*(1 - c)
+		local myz = y*z*(1 - c)
+		local mzx = z*x*(1 - c)
+
+		local rx = Vector3.new(x*x*(1 - c) + c, mxy + z*s, mzx - y*s)
+		local ry = Vector3.new(mxy - z*s, y*y*(1 - c) + c, myz + x*s)
+		local rz = Vector3.new(mzx + y*s, myz - x*s, z*z*(1 - c) + c)
+
+		return CFrame.fromMatrix(Vector3.zero, rx, ry, rz):Orthonormalize()
+	end
+
+	local function rotateAxis(r0: Vector3, c1: CFrame)
+		local c0 = CFrame.identity
+		local mag = r0.Magnitude
+		if mag > 1e-6 then
+			c0 = fromAxisAngle(r0.Unit, mag)
+		end
+		return c0 * c1
+	end
+
+	-- axis*angle difference between two cframes
+	local function axisAngleDiff(c0: CFrame, c1: CFrame)
+		-- use native axis (stable enough)
+		local axis = (c0*c1:Inverse()):ToAxisAngle()
+		
+		-- use full-precision angle calculation to minimize truncation
+		local angle = angleDiff(c0, c1)
+		return axis.Unit*angle
+	end
+
 	function RotationSpring.canSleep(self: RotationSpring)
-		local sleepP = angleBetween(self.p, self.g) < SLEEP_ROTATION_OFFSET
+		local sleepP = areRotationsClose(self.p, self.g)
 		local sleepV = self.v.Magnitude < SLEEP_ROTATION_VELOCITY
 		return sleepP and sleepV
 	end
 
 	function RotationSpring.step(self: RotationSpring, dt: number): CFrame
 		local d = self.d
-		local f = self.f*2*pi
+		local f = self.f*(2*pi)
 		local g = self.g
 		local p0 = self.p
 		local v0 = self.v
 
-		local offset = matrixToAxis(p0*g:Inverse())
+		local offset = axisAngleDiff(p0, g)
 		local decay = exp(-d*f*dt)
 
 		local pt: CFrame
 		local vt: Vector3
 
 		if d == 1 then -- critically damped
-			local w = dt*decay
-
-			pt = axisToMatrix((offset*(1 + f*dt) + v0*dt)*decay)*g
+			pt = rotateAxis((offset*(1 + f*dt) + v0*dt)*decay, g)
 			vt = (v0*(1 - dt*f) - offset*(dt*f*f))*decay
 
 		elseif d < 1 then -- underdamped
@@ -320,14 +359,14 @@ do
 			local y = j/(f*c)
 			local z = j/c
 
-			pt = axisToMatrix((offset*(i + z*d) + v0*y)*decay)*g
+			pt = rotateAxis((offset*(i + z*d) + v0*y)*decay, g)
 			vt = (v0*(i - z*d) - offset*(z*f))*decay
 
 		else -- overdamped
 			local c = sqrt(d*d - 1)
 
-			local r1 = -f*(d - c)
-			local r2 = -f*(d + c)
+			local r1 = -f*(d + c)
+			local r2 = -f*(d - c)
 
 			local co2 = (v0 - offset*r1)/(2*f*c)
 			local co1 = offset - co2
@@ -335,7 +374,7 @@ do
 			local e1 = co1*exp(r1*dt)
 			local e2 = co2*exp(r2*dt)
 
-			pt = axisToMatrix(e1 + e2)*g
+			pt = rotateAxis(e1 + e2, g)
 			vt = e1*r1 + e2*r2
 		end
 
@@ -388,13 +427,13 @@ do
 	end
 
 	function CFrameSpring:setDampingRatio(value: number)
-		self._position:setDampingRatio(value)
-		self._rotation:setDampingRatio(value)
+		self._position.d = value
+		self._rotation.d = value
 	end
 
 	function CFrameSpring:setFrequency(value: number)
-		self._position:setFrequency(value)
-		self._rotation:setFrequency(value)
+		self._position.f = value
+		self._rotation.f = value
 	end
 
 	function CFrameSpring:canSleep()
@@ -605,121 +644,194 @@ local typeMetadata = {
 	}
 }
 
--- Frame loop
-local springStates: {[Instance]: {[string]: any}} = {} -- {[instance] = {[property] = spring}
+type PropertyOverride = {
+	[string]: {
+		class: string,
+		get: (any)->(),
+		set: (any, any)->(),
+	}
+}
 
-RunService.Heartbeat:Connect(function(dt)
+local PSEUDO_PROPERTIES: PropertyOverride = {
+	Pivot = {
+		class = "PVInstance",
+		get = function(inst: PVInstance)
+			return inst:GetPivot()
+		end,
+		set = function(inst: PVInstance, value: CFrame)
+			inst:PivotTo(value)
+		end
+	},
+	Scale = {
+		class = "Model",
+		get = function(inst: Model)
+			return inst:GetScale()
+		end,
+		set = function(inst: Model, value: number)
+			local FLOAT_MANTISSA_MIN = 1.402e-45
+			local FLOAT_MANTISSA_MAX = 2^24
+			value = math.clamp(value, FLOAT_MANTISSA_MIN, FLOAT_MANTISSA_MAX)
+			inst:ScaleTo(value)
+		end
+	}
+}
+
+local function getProperty(instance: Instance, property: string): any
+	local override = PSEUDO_PROPERTIES[property]
+	if override and instance:IsA(override.class) then
+		return override.get(instance)
+	else
+		return (instance :: any)[property]
+	end
+end
+
+local function setProperty(instance: Instance, property: string, value: unknown)
+	local override = PSEUDO_PROPERTIES[property]
+	if override and instance:IsA(override.class) then
+		override.set(instance, value)
+	else
+		(instance :: any)[property] = value
+	end
+end
+
+-- Frame loop
+local springStates_other: {[Instance]: {[string]: any}} = {} -- {[instance] = {[property] = spring}
+local springStates_render: {[Instance]: {[string]: any}} = {} -- {[instance] = {[property] = spring}
+local completedCallbacks: {[Instance]: {()->()}} = {}
+
+local function processSprings(springStates: typeof(springStates_other), dt: number)
 	for instance, state in springStates do
 		for propName, spring in state do
 			if spring:canSleep() then
 				state[propName] = nil
-				(instance :: any)[propName] = spring.rawGoal
+				setProperty(instance, propName, spring.rawGoal)
 			else
-				(instance :: any)[propName] = spring:step(dt)
+				setProperty(instance, propName, spring:step(dt))
 			end
 		end
 
 		if not next(state) then
 			springStates[instance] = nil
+
+			-- trigger completed callbacks when all properties finish animating
+			local callbackList = completedCallbacks[instance]
+			if callbackList then
+				-- flush callback list before we run any callbacks in case
+				-- one of the callbacks recursively adds another callback
+				completedCallbacks[instance] = nil
+
+				for _, callback in callbackList do
+					task.spawn(callback)
+				end
+			end
 		end
 	end
+end
+
+RunService.PreSimulation:Connect(function(dt)
+	processSprings(springStates_other, dt)
 end)
+
+RunService.PostSimulation:Connect(function(dt)
+	processSprings(springStates_render, dt)
+end)
+
+local function assertType(argNum: number, fnName: string, expectedType: string, value: unknown)
+	if not expectedType:find(typeof(value)) then
+		error(`bad argument #{argNum} to {fnName} ({expectedType} expected, got {typeof(value)})`, 3)
+	end
+end
 
 -- API
 local spr = {}
-do
-	local function assertType(argNum: number, fnName: string, expectedType: string, value: unknown)
-		if not expectedType:find(typeof(value)) then
-			error(
-				("bad argument #%d to %s (%s expected, got %s)"):format(
-					argNum,
-					fnName,
-					expectedType,
-					typeof(value)
-				),
-				3
-			)
-		end
+
+function spr.target(instance: Instance, dampingRatio: number, frequency: number, properties: {[string]: any})
+	if STRICT_RUNTIME_TYPES then
+		assertType(1, "spr.target", "Instance", instance)
+		assertType(2, "spr.target", "number", dampingRatio)
+		assertType(3, "spr.target", "number", frequency)
+		assertType(4, "spr.target", "table", properties)
 	end
 
-	function spr.target(instance: Instance, dampingRatio: number, frequency: number, properties: {[string]: any})
-		if STRICT_RUNTIME_TYPES then
-			assertType(1, "spr.target", "Instance", instance)
-			assertType(2, "spr.target", "number", dampingRatio)
-			assertType(3, "spr.target", "number", frequency)
-			assertType(4, "spr.target", "table", properties)
-		end
-
-		if dampingRatio ~= dampingRatio or dampingRatio < 0 then
-			error(("expected damping ratio >= 0; got %.2f"):format(dampingRatio), 2)
-		end
-
-		if frequency ~= frequency or frequency < 0 then
-			error(("expected undamped frequency >= 0; got %.2f"):format(frequency), 2)
-		end
-
-		local state = springStates[instance]
-		if not state then
-			state = {}
-			springStates[instance] = state
-		end
-
-		for propName, propTarget in properties do
-			local propValue = (instance :: any)[propName]
-
-			if STRICT_RUNTIME_TYPES and typeof(propTarget) ~= typeof(propValue) then
-				error(
-					("bad property %s to spr.target (%s expected, got %s)"):format(
-					propName,
-					typeof(propValue),
-					typeof(propTarget)
-					),
-					2
-				)
-			end
-
-			-- Special case infinite frequency for an instantaneous change
-			if frequency == math.huge then
-				(instance :: any)[propName] = propTarget
-				state[propName] = nil
-				continue
-			end
-
-			local spring = state[propName]
-			if not spring then
-				local md = typeMetadata[typeof(propTarget)]
-				if not md then
-					error("unsupported type: " .. typeof(propTarget), 2)
-				end
-
-				spring = md.springType(dampingRatio, frequency, propValue, propTarget, md)
-				state[propName] = spring
-			end
-
-			spring:setGoal(propTarget)
-			spring:setDampingRatio(dampingRatio)
-			spring:setFrequency(frequency)
-		end
-
-		if not next(state) then
-			springStates[instance] = nil
-		end
+	if dampingRatio ~= dampingRatio or dampingRatio < 0 then
+		error(("expected damping ratio >= 0; got %.2f"):format(dampingRatio), 2)
 	end
 
-	function spr.stop(instance: Instance, property: string?)
-		if STRICT_RUNTIME_TYPES then
-			assertType(1, "spr.stop", "Instance", instance)
-			assertType(2, "spr.stop", "string|nil", property)
+	if frequency ~= frequency or frequency < 0 then
+		error(("expected undamped frequency >= 0; got %.2f"):format(frequency), 2)
+	end
+
+	local targetRecord = (if instance:IsA("Camera") then springStates_render else springStates_other) :: {[Instance]: {[string]: any}}
+
+	local state = targetRecord[instance]
+	if not state then
+		state = {}
+		targetRecord[instance] = state
+	end
+
+	for propName, propTarget in properties do
+		local propValue = getProperty(instance, propName)
+
+		if STRICT_RUNTIME_TYPES and typeof(propTarget) ~= typeof(propValue) then
+			error(`bad property {propName} to spr.target ({typeof(propValue)} expected, got {typeof(propTarget)})`, 2)
 		end
 
-		if property then
-			local state = springStates[instance]
-			if state then
-				state[property] = nil
-			end
-		else
-			springStates[instance] = nil
+		-- Special case infinite frequency for an instantaneous change
+		if frequency == math.huge then
+			setProperty(instance, propName, propTarget)
+			state[propName] = nil
+			continue
 		end
+
+		local spring = state[propName]
+		if not spring then
+			local md = typeMetadata[typeof(propTarget)]
+			if not md then
+				error("unsupported type: " .. typeof(propTarget), 2)
+			end
+
+			spring = md.springType(dampingRatio, frequency, propValue, propTarget, md)
+			state[propName] = spring
+		end
+
+		spring:setGoal(propTarget)
+		spring:setDampingRatio(dampingRatio)
+		spring:setFrequency(frequency)
+	end
+
+	if not next(state) then
+		targetRecord[instance] = nil
+	end
+end
+
+function spr.stop(instance: Instance, property: string?)
+	if STRICT_RUNTIME_TYPES then
+		assertType(1, "spr.stop", "Instance", instance)
+		assertType(2, "spr.stop", "string|nil", property)
+	end
+
+	if property then
+		local state = springStates_other[instance] or springStates_render[instance]
+		if state then
+			state[property] = nil
+		end
+	else
+		springStates_other[instance] = nil
+		springStates_render[instance] = nil
+	end
+end
+
+function spr.completed(instance: Instance, callback: ()->())
+	if STRICT_RUNTIME_TYPES then
+		assertType(1, "spr.completed", "Instance", instance)
+		assertType(2, "spr.completed", "function", callback)
+	end
+
+	local callbackList = completedCallbacks[instance]
+	if callbackList then
+		table.insert(callbackList, callback)
+	else
+		completedCallbacks[instance] = {callback}
 	end
 end
 

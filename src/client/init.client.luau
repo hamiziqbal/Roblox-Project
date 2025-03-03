@@ -9,9 +9,9 @@ local Packages = ReplicatedStorage.Packages
 local Shared = ReplicatedStorage.Shared
 
 local Warp = require(Packages.warp)
-local Spring = require(Packages.spr)
-local NumberAnimation = require(Packages.NumberAnimation)
 
+local Spring = require(Shared.spr)
+local NumberAnimation = require(Shared.NumberAnimation)
 local Weapons = require(Shared.Weapons)
 local Rarities = require(Shared.Rarities)
 
@@ -28,21 +28,16 @@ local circle = PlayerGUI.Effects.Circle
 
 local mouse = Player:GetMouse()
 
-local intVal = Instance.new("IntValue")
-intVal.Value = 0
-
-local coinsNumberAnimation = NumberAnimation.new(UI.Coins.Amount, intVal, {
-    Style = "Tween",
-    Time = 1,
-    EasingStyle = "Quad",
-    EasingDirection = "InOut",
-    Abbreviate = true
-})
-
-coinsNumberAnimation:Start()
-
 Remote:Connect(function(amount)
-    intVal.Value = amount
+    local coinsNumberAnimation = NumberAnimation.new(UI.Coins.Amount, amount, {
+        Style = "Tween",
+        Time = 1,
+        EasingStyle = "Quad",
+        EasingDirection = "InOut",
+        Abbreviate = true
+    })
+    
+    coinsNumberAnimation:Start()
 end)
 
 local equipDebounce = false
