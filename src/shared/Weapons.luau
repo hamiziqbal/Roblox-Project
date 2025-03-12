@@ -8,7 +8,47 @@ local weapons = {
         Damage = 3,
         Speed = 1,
         HitboxLength = 3,
-    }
+    },
+    ["Longsword"] = {
+        Index = 2,
+        Name = "Longsword",
+        Icon = "rbxassetid://264887296",
+        Rarity = "Common",
+        Type = "Longsword",
+        Damage = 10,
+        Speed = 1.2,
+        HitboxLength = 5,
+    },
+    ["Club"] = {
+        Index = 3,
+        Name = "Club",
+        Icon = "rbxassetid://18850628337",
+        Rarity = "Common",
+        Type = "Club",
+        Damage = 18,
+        Speed = 1.5,
+        HitboxLength = 4,
+    },
+    ["Spear"] = {
+        Index = 4,
+        Name = "Spear",
+        Icon = "rbxassetid://177821871",
+        Rarity = "Uncommon",
+        Type = "Spear",
+        Damage = 10,
+        Speed = 1,
+        HitboxLength = 6,
+    },
+    ["Scythe"] = {
+        Index = 5,
+        Name = "Scythe",
+        Icon = "rbxassetid://16322059955",
+        Rarity = "Rare",
+        Type = "Scythe",
+        Damage = 25,
+        Speed = 1,
+        HitboxLength = 4,
+    },
 }
 
 return weapons

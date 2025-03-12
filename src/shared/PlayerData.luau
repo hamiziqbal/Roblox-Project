@@ -29,7 +29,7 @@ local Warp = require(Packages.warp)
 ----- Private Variables -----
 
 local ProfileStore = ProfileService.GetProfileStore(
-    "PlayerDataTest5",
+    "PlayerDataTest7",
     ProfileTemplate
 )
 
@@ -52,14 +52,17 @@ local function GiveCoins(profile, amount, player)
     Remote:Fire(true,player, profile.Data.Coins)
 end
 
-local function GiveItem(itemName, player, profile)
-    Remote2:Fire(true, player, itemName, profile.Data.Inventory.EquippedId)
+local function GiveItem(itemName, player, profile, id)
+    if type(itemName) ~= "string" then
+        id = -1
+    end
+
+    Remote2:Fire(true, player, itemName, profile.Data.Inventory.EquippedId, id)
 end
 
 local function DoSomethingWithALoadedProfile(player, profile)
     if profile.Data.LogInTimes == 0 then
         table.insert(profile.Data.Inventory.Weapons, "Classic Sword")
-        --GiveItem(profile.Data.Inventory.Weapons, player, profile)
     end
 
     profile.Data.LogInTimes = profile.Data.LogInTimes + 1
@@ -76,16 +79,41 @@ Remote:Connect(function(player)
     GiveCoins(profile, 100, player)
 end)
 
+Remote2:Connect(function(player, itemName, check)
+    local profile = Profiles[player]
+
+    if check ~= nil then
+        if profile.Data[check.Currency] >= check.Amount then
+            profile.Data[check.Currency] -= check.Amount
+            Remote:Fire(true,player, profile.Data[check.Currency])
+            table.insert(profile.Data.Inventory.Weapons, itemName)
+            GiveItem(itemName, player, profile, #profile.Data.Inventory.Weapons) 
+        else
+            print("Insufficient funds")
+        end
+    else
+        table.insert(profile.Data.Inventory.Weapons, itemName)
+        GiveItem(itemName, player, profile,#profile.Data.Inventory.Weapons)
+    end
+end)
+
+local equipDebounce = false
+
 Remote3:Connect(function(player, id)
+    if equipDebounce then return end
+    equipDebounce = true
+
     if Profiles[player].Data.Inventory.EquippedId == id then
         Profiles[player].Data.Inventory.EquippedId = 0
     else
         Profiles[player].Data.Inventory.EquippedId = id
     end
 
-    print("Yeah")
+    print("Equipped Id: "..Profiles[player].Data.Inventory.EquippedId)
 
-    Remote3:Fire(true, player, id)
+    Remote3:Fire(true, player, Profiles[player].Data.Inventory.EquippedId)
+
+    equipDebounce = false
 end)
 
 local function PlayerAdded(player)
