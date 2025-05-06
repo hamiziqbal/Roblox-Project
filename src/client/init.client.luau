@@ -23,6 +23,8 @@ local Spring = require(Shared.spr)
 local InventoryButton = require(Shared.InventoryButton)
 
 local Remote2 = Warp.Client("GiveItem")
+local Remote0 = Warp.Client("CreateButton")
+local Remote4 = Warp.Client("CreateParty")
 
 local UI = PlayerGUI:WaitForChild("HUD")
 
@@ -39,6 +41,22 @@ Remote2:Connect(function(items, equipped, itemId)
         end
     else
         InventoryButton.new(items, itemId)
+    end
+end)
+
+Remote0:Connect(function(id)
+
+    for _, party in UI.GameFrame.ActiveParties:GetChildren() do
+        if party:IsA("Frame") then
+            if party:GetAttribute("Id") == id then
+                party.PlayMap.MouseButton1Click:Connect(function()
+                    Remote4:Fire(true, id)
+
+                    UI.GameFrame.ActiveParties.Visible = false
+                    UI.GameFrame.StartGame.Visible = true
+                end)
+            end
+        end
     end
 end)
 

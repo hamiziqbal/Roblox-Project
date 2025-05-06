@@ -13,19 +13,12 @@ return function()
     if debounce then return end
     debounce = true
 
-    Frame.SelectedFrame.Difficulty.Text = "Difficulty: Easy"
-    Frame.SelectedFrame.MapName.Text = "Forest"
-    Frame.SelectedFrame.MapLevel.Text = "Lvl 0+"
-    Frame.SelectedFrame.MapIcon.Image = "rbxassetid://11612788415"
-    Frame.SelectedFrame.CreateParty:SetAttribute("Difficulty", "Easy")
-    Frame.SelectedFrame.CreateParty:SetAttribute("Map", "Forest")
-
     Frame.Create.Visible = false
     Frame.Join.Visible = false
-    Frame.Maps.Visible = true
-    Frame.SelectedFrame.Visible = true
-    Frame.ActiveParties.Visible = false
+    Frame.Maps.Visible = false
+    Frame.SelectedFrame.Visible = false
     Frame.StartGame.Visible = false
+    Frame.ActiveParties.Visible = true
 
     debounce = false
 end

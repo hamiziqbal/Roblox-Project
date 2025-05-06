@@ -18,6 +18,7 @@ local ProfileTemplate = {
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 
 ----- Folders -----
 
@@ -27,6 +28,7 @@ local Packages = ReplicatedStorage.Packages
 
 local ProfileService = require(ServerScriptService.Server.ProfileService)
 local Warp = require(Packages.warp)
+local Maps = require(ReplicatedStorage.Shared.Maps)
 
 ----- Private Variables -----
 
@@ -36,10 +38,13 @@ local ProfileStore = ProfileService.GetProfileStore(
 )
 
 local Profiles = {} -- [player] = profile
+local ActiveParties = {}
 
 local Remote = Warp.Server("GiveCoins")
 local Remote2 = Warp.Server("GiveItem")
 local Remote3 = Warp.Server("Equip")
+local Remote4 = Warp.Server("CreateParty")
+local Remote5 = Warp.Server("StartGame")
 
 ----- Private Functions -----
 
@@ -118,6 +123,95 @@ Remote3:Connect(function(player, id)
     equipDebounce = false
 end)
 
+local function createParties(party, player)
+    --task.spawn(function()
+        local template = ReplicatedStorage.Assets.MapTemplate:Clone()
+        template.Background.Image = Maps[party.Map].Icon 
+        template.MapName.Text = Maps[party.Map].Name
+        template.Difficulty.Text = party.Difficulty
+        template.MapLevel.Text = "Level "..Maps[party.Map].Levels[party.Difficulty].."+"
+        template.Players.Text = "("..#party.Players.."/"..party.MaxPlayers..")"
+        template.Username.Text = party.Players[1].Name
+        template.Headshot.Image = Players:GetUserThumbnailAsync(party.Players[1].UserId,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48)
+        template.UserLevel.Text = "Level "..Profiles[party.Players[1]].Data.Level        
+        template.Parent = player.PlayerGui.HUD.GameFrame.ActiveParties
+
+        template:SetAttribute("Id", party.Id)
+    --end)
+end
+
+local Remote0 = Warp.Server("CreateButton")
+
+Remote4:Connect(function(player, id, difficulty, map)
+    if id == 0 then
+
+        ActiveParties[#ActiveParties+1] = {
+            Id = #ActiveParties+1,
+            Difficulty = difficulty,
+            Map = map,
+            Players = {
+                [1] = player,
+            },
+            MaxPlayers = 4,
+        }
+
+        id = #ActiveParties
+        
+    else
+        ActiveParties[id].Players[#ActiveParties[id].Players+1] = player
+    end
+
+    local party = ActiveParties[id]
+
+    if ActiveParties[id].Players[1] == player then
+        for _, p in Players:GetPlayers() do
+            createParties(party, p)
+        end
+
+        Remote0:Fires(true, party.Id)
+    end
+
+    for _, pr in ActiveParties[id].Players do
+        local owner = false
+
+        if ActiveParties[id].Players[1] == pr then
+            owner = true
+        end
+
+        Remote4:Fire(true, player, pr, Profiles[pr].Data.Level, owner, #ActiveParties[id].Players)
+    end
+
+    for _, pr in ActiveParties[id].Players do
+        if pr ~= player then
+            Remote4:Fire(true, pr, player, Profiles[player].Data.Level, false, #ActiveParties[id].Players)
+        end
+    end
+
+    
+ end)
+
+local function searchForPlayer(player)
+    for _, party in ActiveParties do
+        if party.Players[1] == player then
+            return party
+        end
+    end
+
+    return nil
+end
+
+Remote5:Connect(function(player)
+    local party = searchForPlayer(player)
+    if party ~= nil then
+        local server = TeleportService:ReserveServer(128808972728561)
+        TeleportService:TeleportToPrivateServer(128808972728561, server, party.Players)
+
+        for _, player in party.Players do
+            Remote5:Fire(true, player)
+        end
+    end
+end)
+
 local function PlayerAdded(player)
     local profile = ProfileStore:LoadProfileAsync("Player_" .. player.UserId)
     if profile ~= nil then
@@ -141,6 +235,13 @@ local function PlayerAdded(player)
             ui.Text = "Level "..level
             ui.EXP.Amount.Text = profile.Data.Exp.."/"..maxXP
             ui.EXP.Fill.Size = UDim2.fromScale(profile.Data.Exp/maxXP,1)
+
+            for _, party in ActiveParties do
+                createParties(party, player)
+                Remote0:Fire(true, player, party.Id)        
+            end
+
+
         else
             -- Player left before the profile loaded:
             profile:Release()

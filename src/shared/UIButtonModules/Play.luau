@@ -35,6 +35,7 @@ return function()
         Frame.Maps.Visible = false
         Frame.SelectedFrame.Visible = false
         Frame.StartGame.Visible = false
+        Frame.ActiveParties.Visible = false
 
         Spring.target(Frame, 0.3, 3, {Position = UDim2.fromScale(0.5,0.5)})
         Spring.completed(Frame,function()
