@@ -46,7 +46,7 @@ function buttons.new(itemName, id)
     Item.UIStroke.Color = Rarities[Data.Rarity].BorderColor
     Item.ItemName.Text = Data.Name
 
-    Item.Parent = InventoryFrame.Loot
+    Item.Parent = InventoryFrame.Weapons
 
     local x,y = Item.Size.X.Scale,Item.Size.Y.Scale
     local hue, saturation, value = Item.BackgroundColor3:ToHSV()

@@ -13,6 +13,12 @@ return function()
     if debounce then return end
     debounce = true
 
+    for _, frame in UI:GetChildren() do
+        if string.find(frame.Name, "Frame") and frame ~= InventoryFrame then
+            frame.Visible = false
+        end
+    end
+
     if InventoryFrame.Visible then
         InventoryFrame.Position = UDim2.fromScale(0.5,0.5)
         Spring.target(InventoryFrame, 1, 3, {Position = UDim2.fromScale(0.5,1.5)})

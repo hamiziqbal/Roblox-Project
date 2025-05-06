@@ -1,6 +1,8 @@
 local ProfileTemplate = {
     Coins = 0,
     Gems = 0,
+    Level = 0,
+    Exp = 0,
     Inventory = {
         Weapons = {},
         Armor = {},
@@ -29,7 +31,7 @@ local Warp = require(Packages.warp)
 ----- Private Variables -----
 
 local ProfileStore = ProfileService.GetProfileStore(
-    "PlayerDataTest7",
+    "PlayerDataTest9",
     ProfileTemplate
 )
 
@@ -131,6 +133,14 @@ local function PlayerAdded(player)
             -- A profile has been successfully loaded:
             DoSomethingWithALoadedProfile(player, profile)
             GiveItem(profile.Data.Inventory.Weapons, player, profile)
+            
+            local level = profile.Data.Level
+            local ui =  player.PlayerGui:FindFirstChild("HUD").Level
+            local maxXP = (math.round(0.04 * (level ^ 3) + 0.8 * (level ^ 2) + 2 * level) * 20) + 15
+
+            ui.Text = "Level "..level
+            ui.EXP.Amount.Text = profile.Data.Exp.."/"..maxXP
+            ui.EXP.Fill.Size = UDim2.fromScale(profile.Data.Exp/maxXP,1)
         else
             -- Player left before the profile loaded:
             profile:Release()

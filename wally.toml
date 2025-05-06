@@ -6,3 +6,4 @@ realm = "shared"
 
 [dependencies]
 warp = "imezx/warp@1.0.14"
+replica = "aykut92/replica@0.1.7"
